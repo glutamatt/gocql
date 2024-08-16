@@ -2,6 +2,8 @@ package gocql
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -108,23 +110,27 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 	selectedHost := hostIter()
 	rt := qry.retryPolicy()
 
-	var lastErr error
+	var errs []error
+
 	var iter *Iter
 	for selectedHost != nil {
 		host := selectedHost.Info()
 		if host == nil || !host.IsUp() {
+			errs = append(errs, ErrSelectHost{host: host, cause: ErrHostNilOrDown})
 			selectedHost = hostIter()
 			continue
 		}
 
 		pool, ok := q.pool.getPool(host)
 		if !ok {
+			errs = append(errs, ErrSelectHost{host: host, cause: ErrNoConnPool})
 			selectedHost = hostIter()
 			continue
 		}
 
 		conn := pool.Pick(selectedHost.Token())
 		if conn == nil {
+			errs = append(errs, ErrSelectHost{host: host, cause: ErrNoConnInHostPool})
 			selectedHost = hostIter()
 			continue
 		}
@@ -147,7 +153,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 		if iter.err == nil || rt == nil || !rt.Attempt(qry) {
 			return iter
 		}
-		lastErr = iter.err
+		errs = append(errs, ErrSelectHost{host: host, cause: iter.err})
 
 		// If query is unsuccessful, check the error with RetryPolicy to retry
 		switch rt.GetRetryType(iter.err) {
@@ -166,11 +172,28 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 		}
 	}
 
-	if lastErr != nil {
-		return &Iter{err: lastErr}
+	if len(errs) > 0 {
+		return &Iter{err: errors.Join(errs...)}
 	}
 
 	return &Iter{err: ErrNoConnections}
+}
+
+var ErrHostNilOrDown = errors.New("gocql: host nil or down")
+var ErrNoConnPool = errors.New("gocql: no connection pool for host")
+var ErrNoConnInHostPool = errors.New("gocql: no connection to pick in host pool")
+
+type ErrSelectHost struct {
+	host  *HostInfo
+	cause error
+}
+
+func (err ErrSelectHost) Error() string {
+	h := "unknown host"
+	if err.host != nil {
+		h = err.host.Hostname()
+	}
+	return fmt.Sprintf("%s: %v", h, err.cause)
 }
 
 func (q *queryExecutor) run(ctx context.Context, qry ExecutableQuery, hostIter NextHost, results chan<- *Iter) {
