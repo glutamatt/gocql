@@ -344,6 +344,7 @@ func (pool *hostConnPool) Size() int {
 
 // Close the connection pool
 func (pool *hostConnPool) Close() {
+	pool.logger.Printf("closing hostConnPool of %q", pool.host)
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 
@@ -441,9 +442,8 @@ func (pool *hostConnPool) logConnectErr(err error) {
 // transition back to a not-filling state.
 func (pool *hostConnPool) fillingStopped(err error) {
 	if err != nil {
-		if gocqlDebug {
-			pool.logger.Printf("gocql: filling stopped %q: %v\n", pool.host.ConnectAddress(), err)
-		}
+		pool.logger.Printf("gocql: filling stopped %q: %v\n", pool.host.ConnectAddress(), err)
+
 		// wait for some time to avoid back-to-back filling
 		// this provides some time between failed attempts
 		// to fill the pool for the host to recover
@@ -459,9 +459,8 @@ func (pool *hostConnPool) fillingStopped(err error) {
 
 	// if we errored and the size is now zero, make sure the host is marked as down
 	// see https://github.com/gocql/gocql/issues/1614
-	if gocqlDebug {
-		pool.logger.Printf("gocql: conns of pool after stopped %q: %v\n", host.ConnectAddress(), count)
-	}
+	pool.logger.Printf("gocql: conns of pool after stopped %q: %v", host.ConnectAddress(), count)
+
 	if err != nil && count == 0 {
 		if pool.session.cfg.ConvictionPolicy.AddFailure(err, host) {
 			pool.session.handleNodeDown(host.ConnectAddress(), port)

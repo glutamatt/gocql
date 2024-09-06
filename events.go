@@ -228,10 +228,7 @@ func (s *Session) handleNodeConnected(host *HostInfo) {
 }
 
 func (s *Session) handleNodeDown(ip net.IP, port int) {
-	if gocqlDebug {
-		s.logger.Printf("gocql: Session.handleNodeDown: %s:%d\n", ip.String(), port)
-	}
-
+	s.logger.Printf("gocql: Session.handleNodeDown: %s:%d", ip.String(), port)
 	host, ok := s.ring.getHostByIP(ip.String())
 	if ok {
 		host.setState(NodeDown)
