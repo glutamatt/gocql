@@ -459,7 +459,9 @@ func (pool *hostConnPool) fillingStopped(err error) {
 
 	// if we errored and the size is now zero, make sure the host is marked as down
 	// see https://github.com/gocql/gocql/issues/1614
-	pool.logger.Printf("gocql: conns of pool after stopped %q: %v", host.ConnectAddress(), count)
+	if gocqlDebug {
+		pool.logger.Printf("gocql: conns of pool after stopped %q: %v", host.ConnectAddress(), count)
+	}
 
 	if err != nil && count == 0 {
 		if pool.session.cfg.ConvictionPolicy.AddFailure(err, host) {
@@ -585,9 +587,8 @@ func (pool *hostConnPool) HandleError(conn *Conn, err error, closed bool) {
 		return
 	}
 
-	if gocqlDebug {
-		pool.logger.Printf("gocql: pool connection error %q: %v\n", conn.addr, err)
-	}
+	pool.logger.Printf("gocql: removing failed pool connection to %q from connPicker: %v", conn.addr, err)
 
 	pool.connPicker.Remove(conn)
+	go pool.fill()
 }
